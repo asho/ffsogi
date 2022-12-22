@@ -1,7 +1,6 @@
 #!/bin/bash
 
 test -z $FFMPEG && FFMPEG=`which ffmpeg`
-FFMPEG=/usr/bin/ffmpeg
 
 ### Variables
 INPUT=""
@@ -19,6 +18,42 @@ HWDEC=""
 EIGHT_BIT=1
 DEINTERLANCE=""
 FORMAT="h265"
+
+
+function help()
+{
+	echo "$0 [options]:"
+	echo "-c [val]: CRF value. CRF encoding mode (default)."
+	echo ""
+	echo "-b|--vb [bitrate]: Video bitrate value. VBR encoding mode. conflict with CRF."
+	echo ""
+	echo "-i [file]: input file to encode."
+	echo ""
+	echo "-o [file]: output file."
+	echo ""
+	echo "-s [width]: width to scale down. special value 7 for 720p, 4 for 480p."
+	echo "            $0 calculates the best height by w/h ratio of input source."
+	echo ""
+	echo "-8: specify output to 8bit colorspace. Useful with hevc10 and avc10 to convert to 8bit."
+	echo "    Some devices don't support 10bit. Better convert films to 8bit."
+	echo ""
+	echo "-f [format]: specify output film format. h264(avc), h265(hevc), av1."
+	echo ""
+	echo "--ab [bitrate]: default value is 64k for AAC."
+	echo ""
+	echo "--acopy: copy the audio track without encoding. Output file may be mkv for best compatibility"
+	echo ""
+	echo "--hw: Use hardware decoder to decode source file."
+	echo "      $0 always use hardware encoder to encode frames. However the source bitstream can be fed by"
+	echo "      software(cpu) decode or hardware decode. If the hardware support the codec of input file, it is best"
+	echo "      to use hardware decode for efficiency. Otherwise use software decode for compatibility but slow performance."
+	echo ""
+	echo "--audio-loud: To amplify audio volume. Conflict with --acopy"
+	echo ""
+	echo "--de: deinterlace mode. Not useful now."
+	echo ""
+	echo "--ffopt [options]: Append ffmpeg options that ffsogi not support."
+}
 
 
 options=$(getopt -o c:b:i:o:s:8f: --long vb:,ab:,hw,audio-loud,de,ffopt:,acopy -- "$@")
@@ -84,7 +119,7 @@ while true; do
 	shift
 done
 
-test -z "$OUTPUT" && echo "no output file" && exit 1;
+test -z "$OUTPUT" && echo "no output file" && help && exit 1;
 
 INPUT=\"${INPUT}\"
 OUTPUT=\"${OUTPUT}\"

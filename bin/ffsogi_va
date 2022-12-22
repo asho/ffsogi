@@ -1,0 +1,168 @@
+#!/bin/bash
+
+test -z $FFMPEG && FFMPEG=`which ffmpeg`
+FFMPEG=/usr/bin/ffmpeg
+
+### Variables
+INPUT=""
+OUTPUT=""
+AUDIO_BITRATE="64"
+VIDEO_BITRATE=""
+CRF="26"
+VIDEO_BITRATE=""
+AUDIO_LOUD=""
+SCALE=""
+ACOPY=""
+CODEC=
+OPT=
+HWOPT="-vaapi_device /dev/dri/renderD128"
+HWDEC=
+EIGHT_BIT=""
+DEINTERLACE=
+FORMAT="h265"
+
+options=$(getopt -o c:b:i:o:s:8f: --long vb:,ab:,hw,audio-loud,de,ffopt:,acopy -- "$@")
+eval set -- "$options" 
+while true; do 
+	case "$1" in 
+		-c)
+			shift;
+			CRF=$1
+			;;
+		-b|--vb)
+			shift;
+			VIDEO_BITRATE=$1
+			CRF=""
+			;;
+		-i)
+			shift;
+			INPUT="$1"
+			;;
+		-o)
+			shift;
+			OUTPUT="$1"
+			;;
+		-s)
+			shift;
+			SCALE=$1
+			;;
+		-8)
+			EIGHT_BIT=1
+			;;
+		-f)
+			shift;
+			FORMAT="$1"
+			;;
+		--ab)
+			shift;
+			AUDIO_BITRATE=$1
+			;;
+		--hw)
+			HWDEC=1
+			HWOPT="-hwaccel vaapi -hwaccel_output_format vaapi -hwaccel_device /dev/dri/renderD128"
+			;;
+		--audio-loud)
+			AUDIO_LOUD=1
+			;;
+		--de)
+			DEINTERLACE=1
+			;;
+		--ffopt)
+			shift;
+			OPT="$1"
+			;;
+		--acopy)
+			AUDIO_BITRATE=""
+			AUDIO_LOUD=""
+			ACOPY=1
+			;;
+		--)
+			shift;
+			break
+			;;
+	esac
+	shift
+done
+
+test -z "$OUTPUT" && echo "no output file" && exit 1;
+
+INPUT=\"${INPUT}\"
+OUTPUT=\"${OUTPUT}\"
+echo "input file: $INPUT"
+echo "output file: $OUTPUT"
+
+if [ "${FORMAT}" == "h264" ] || [ "${FORMAT}" = "avc" ]; then
+	OVC="-c:v h264_vaapi -coder:v cabac -refs 4"
+	if [ -z $VIDEO_BITRATE ]; then
+		OVC="$OVC -qp ${CRF}"
+	else
+		OVC="$OVC -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k"
+	fi
+elif [ "${FORMAT}" == "h265" ] || [ "${FORMAT}" == "hevc" ]; then
+	OVC="-c:v hevc_vaapi"
+	if [ -z $VIDEO_BITRATE ]; then
+		OVC="$OVC -qp ${CRF}"
+	else
+		OVC="$OVC -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k"
+	fi
+elif [ "${FORMAT}" == "av1" ]; then
+	OVC="-c:v av1_vaapi"
+	if [ -z $VIDEO_BITRATE ]; then
+		OVC="$OVC -qp ${CRF}"
+	else
+		OVC="$OVC -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k"
+	fi
+else
+	echo "No support format!!!"
+	exit;
+fi
+
+VF=""
+if [ ${HWDEC} = "1" ]; then
+	if [ ${EIGHT_BIT} = "1" ]; then
+		VF="scale_vaapi=format=nv12"
+	fi
+else
+	VF="format=nv12,hwupload"
+fi
+
+
+if [ $SCALE ]; then
+	if [ $SCALE == "7" ]; then
+		SCALE=1280
+	elif [ $SCALE == "4" ]; then
+		SCALE=720
+	fi
+
+	if [ -z ${VF} ]; then
+		VF="scale_vaapi=w=${SCALE}:h=trunc(ow/a/2)*2"
+	else
+		VF="${VF},scale_vaapi=w=${SCALE}:h=trunc(ow/a/2)*2"
+	fi
+fi
+
+
+if [ ${DEINTERLACE} ]; then
+	if [ -z ${VF} ]; then
+		VF="yadif"
+	else
+		VF="yadif,${VF}"
+	fi
+fi
+
+if [ ${VF} ]; then
+	VF="-vf '${VF}'"
+fi
+
+if [ $ACOPY ]; then
+	OAC="-c:a copy"
+else
+	OAC="-c:a libfdk_aac -b:a ${AUDIO_BITRATE}k -ac 2"
+
+	if [ $AUDIO_LOUD ]; then
+		AF="-af 'volume=3'"
+	fi
+fi
+
+echo "$FFMPEG -nostdin -y ${HWOPT} -i ${INPUT} ${OPT} ${OVC} ${VF} ${OAC} ${AF} ${OUTPUT}"
+eval "$FFMPEG -nostdin -y ${HWOPT} -i ${INPUT} ${OPT} ${OVC} ${VF} ${OAC} ${AF} ${OUTPUT}"

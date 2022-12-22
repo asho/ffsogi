@@ -1,0 +1,236 @@
+#!/bin/bash
+
+test -z "$FFMPEG" && FFMPEG=$(which ffmpeg)
+
+### Variables
+INPUT=""
+OUTPUT=""
+VIDEO_BITRATE=""
+AUDIO_BITRATE="64"
+CRF=""
+AUDIO_LOUD=""
+CHAPTER_FILE=$(mktemp /tmp/chapter-XXXXXXXX)
+CHAPTER_MERGE="-i ${CHAPTER_FILE} -map_metadata 1 -map_chapters -1 -codec copy"
+LOCAL_OPT="-pix_fmt yuv420p"
+OPT=""
+VCOPY=""
+ACOPY=""
+PRESET="medium"
+X265_OPT=""
+X264_OPT=""
+VF_OPT=""
+FORMAT="h265"
+THREADS=""
+
+
+function help {
+	echo "$1 usage:"
+	echo "-i [input filename]"
+	echo "-o [output filename]"
+	echo "-c [value]. crf value. default 24. slower, quality better, filesize bigger."
+	echo "-f [codec format]. can be h264, h265, av1."
+	echo "-s [4|7]. scale to [4]80p or [7]20p"
+	echo "-j [threads]. specify how many cores to encode."
+	echo "--ab [value]: audio bitrate. default 64."
+	echo "--vb|-b [value]: video bitrate"
+	echo "--audio-loud: make audio volume louder in file."
+	echo "--16: transcode video to 16:9 aspect."
+	echo "--sub: [subtitle filename]"
+	echo "--preset [medium|slow|slower]: set encoder preset mode. default is medium."
+	echo "--ffmpeg_opt [options]: specify ffmpeg options."
+	echo "--vcopy: copy video track only. no transcoding."
+	echo "--acopy: copy audio track only. no transcoding."
+	echo "--deint: deinterlance video while transcoding."
+	echo "--hdr2sdr: convert HDR image to SDR. 4K BD to 1080."
+	echo "--nocc: no color conversion. keep bt2020 when downscale from UHD to HD."
+
+}
+
+
+options=$(getopt -o c:i:b:o:s:j:f: --long ab:,vb:,audio-loud,16,sub:,preset:,ffopt:,vcopy,acopy,deint,hdr2sdr,nocc -- "$@")
+eval set -- "$options" 
+while true; do 
+	case "$1" in 
+		-c)
+			shift;
+			CRF=$1
+			;;
+		-i)
+			shift;
+			INPUT="$1"
+			;;
+		-o)
+			shift;
+			OUTPUT="$1"
+			;;
+		-f)
+			shift;
+			FORMAT="$1"
+			;;
+		-s)
+			shift;
+			if [ "$1" == "7" ]; then
+				SCALE=1280
+			else
+				SCALE=$1
+			fi
+
+			if [ -z ${VF_OPT} ]; then
+				VF_OPT="scale=${SCALE}:trunc(ow/a/2)*2"
+			else
+				VF_OPT="${VF_OPT},scale=${SCALE}:trunc(ow/a/2)*2"
+			fi
+			;;
+		-j)
+			shift;
+			THREADS="$1"
+			;;
+		--ab)
+			shift;
+			AUDIO_BITRATE=$1
+			;;
+		--vb|-b)
+			shift;
+			VIDEO_BITRATE=$1
+			;;
+		--audio-loud)
+			AUDIO_LOUD=1
+			;;
+		--16)
+			VF="-aspect 16:9"
+			;;
+		--sub)
+			shift;
+			if [ -z ${VF_OPT} ]; then
+				VF_OPT="ass='$1'"
+			else
+				VF_OPT="${VF_OPT},ass='$1'"
+			fi
+			;;
+		--ffopt)
+			shift;
+			OPT="$1"
+			;;
+		--preset)
+			shift;
+			PRESET=$1
+			;;
+		--vcopy)
+			VIDEO_BITRATE=""
+			VCOPY=1
+			;;
+		--acopy)
+			AUDIO_BITRATE=""
+			AUDIO_LOUD=""
+			ACOPY=1
+			;;
+		--deint)
+			if [ ! -z ${VF_OPT} ]; then
+				VF_OPT=${VF_OPT},
+			fi
+
+			VF_OPT="${VF_OPT}yadif"
+			;;
+		--hdr2sdr)
+			if [ ! -z ${VF_OPT} ]; then
+				VF_OPT=${VF_OPT},
+			fi
+			#VF_OPT="${VF_OPT}zscale=transfer=linear,tonemap=tonemap=clip:param=1.0:desat=2:peak=0,zscale=transfer=bt709,format=yuv420p"
+			VF_OPT="${VF_OPT}zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+			;;
+		--nocc)
+			X265_OPT=":colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc"
+			X264_OPT=":colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc"
+			;;
+		--)
+			help;
+			shift;
+			break
+			;;
+	esac
+	shift
+done
+
+test -z "$OUTPUT" && help && exit 1;
+
+INPUT=$(echo "${INPUT}" | sed -e 's/`/\\`/')
+INPUT=\"${INPUT}\"
+OUTPUT=\"${OUTPUT}\"
+echo "input file: $INPUT"
+echo "output file: $OUTPUT"
+
+
+if [ $VCOPY ]; then
+	OVC="-c:v copy"
+else
+	if [ "$FORMAT" == "h264" ]; then
+		if [ -z $VIDEO_BITRATE ]; then
+			if [ -z "$CRF" ]; then
+				CRF=24
+			fi
+
+			if [ ${THREADS} ]; then
+				THREADS="-threads ${THREADS}"
+			fi
+
+			OVC="-c:v libx264 -crf ${CRF} -preset ${PRESET} ${THREADS}"
+		else
+			OVC="-c:v libx264 -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k -preset ${PRESET} ${THREADS}"
+		fi
+	elif [ "$FORMAT" == "h265" ]; then
+		if [ -z $VIDEO_BITRATE ]; then
+			if [ -z "$CRF" ]; then
+				CRF=26
+			fi
+
+			if [ ${THREADS} == "1" ]; then
+				THREADS=":pools=none"
+			elif [ ${THREADS} ]; then
+				THREADS=":pools=${THREADS}"
+			fi
+
+			OVC="-c:v libx265 -preset ${PRESET} -x265-params crf=${CRF}${X265_OPT}${THREADS}"
+		else
+			OVC="-c:v libx265 -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k -preset ${PRESET}"
+		fi
+	elif [ "$FORMAT" == "av1" ]; then
+		if [ -z $VIDEO_BITRATE ]; then
+			if [ -z "$CRF" ]; then
+				CRF=30
+			fi
+
+			if [ -z ${THREADS} ]; then
+				THREADS="-threads `nproc`"
+			fi
+
+			OVC="-c:v libsvtav1 -crf ${CRF} -b:v 0 -strict experimental ${THREADS} -preset 8"
+		else
+			OVC="-c:v libsvtav1 -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k -strict experimental ${THREADS} -preset 8"
+		fi
+	fi
+fi
+
+
+if [ $ACOPY ]; then
+	OAC="-c:a copy"
+else
+	OAC="-c:a aac -b:a ${AUDIO_BITRATE}k -ac 2 -ar 44100"
+
+	if [ $AUDIO_LOUD ]; then
+		VF="$VF -af 'volume=3'"
+	fi
+fi
+
+
+if [ "${VF_OPT}" ]; then
+	VF="-vf \"${VF_OPT}\""
+fi
+
+echo "Dump chapters"
+eval "$FFMPEG -nostdin -y -i "${INPUT}" -f ffmetadata ${CHAPTER_FILE}"
+
+echo "$FFMPEG -nostdin -y -i ${INPUT} ${LOCAL_OPT} ${OPT} ${OVC} ${OAC} ${VF} ${OUTPUT}"
+eval "$FFMPEG -nostdin -y -i ${INPUT} ${LOCAL_OPT} ${OPT} ${OVC} ${OAC} ${VF} ${OUTPUT}"
+echo "$FFMPEG -nostdin -y -i ${OUTPUT} ${CHAPTER_MERGE}"
+eval "$FFMPEG -nostdin -y -i ${OUTPUT} ${CHAPTER_MERGE}"
+eval "rm -f ${CHAPTER_FILE}"

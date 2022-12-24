@@ -28,14 +28,14 @@ function help {
 	echo "-i [input filename]"
 	echo "-o [output filename]"
 	echo "-c [value]. crf value. default 24. slower, quality better, filesize bigger."
-	echo "-f [codec format]. can be h264, h265, av1."
+	echo "-f [codec format]. can be h264(avc), h265(hevc)(default), av1."
 	echo "-s [4|7]. scale to [4]80p or [7]20p"
 	echo "-j [threads]. specify how many cores to encode."
 	echo "--ab [value]: audio bitrate. default 64."
 	echo "--vb|-b [value]: video bitrate"
 	echo "--audio-loud: make audio volume louder in file."
 	echo "--16: transcode video to 16:9 aspect."
-	echo "--sub: [subtitle filename]"
+	echo "--sub: [subtitle filename]. Embedded subtitle into video."
 	echo "--preset [medium|slow|slower]: set encoder preset mode. default is medium."
 	echo "--ffmpeg_opt [options]: specify ffmpeg options."
 	echo "--vcopy: copy video track only. no transcoding."
@@ -163,7 +163,7 @@ echo "output file: $OUTPUT"
 if [ $VCOPY ]; then
 	OVC="-c:v copy"
 else
-	if [ "$FORMAT" == "h264" ]; then
+	if [ "$FORMAT" == "h264" ] || [ "${FORMAT}" == "avc" ]; then
 		if [ -z $VIDEO_BITRATE ]; then
 			if [ -z "$CRF" ]; then
 				CRF=24
@@ -177,7 +177,7 @@ else
 		else
 			OVC="-c:v libx264 -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k -preset ${PRESET} ${THREADS}"
 		fi
-	elif [ "$FORMAT" == "h265" ]; then
+	elif [ "$FORMAT" == "h265" ] || [ "${FORMAT}" == "hevc" ]; then
 		if [ -z $VIDEO_BITRATE ]; then
 			if [ -z "$CRF" ]; then
 				CRF=26

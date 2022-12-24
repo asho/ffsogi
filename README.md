@@ -64,7 +64,7 @@ usage:
 -o [file]: output file.
 
 -s [width]: width to scale down. special value 7 for 720p, 4 for 480p.
-            /home/asho/bin/ffsogi_va calculates the best height by w/h ratio of input source.
+            ffsogi calculates the best height by w/h ratio of input source.
 
 -8: specify output to 8bit colorspace. Useful with hevc10 and avc10 to convert to 8bit.
     Some devices don't support 10bit. Better convert films to 8bit.
@@ -76,7 +76,7 @@ usage:
 --acopy: copy the audio track without encoding. Output file may be mkv for best compatibility
 
 --hw: Use hardware decoder to decode source file.
-      /home/asho/bin/ffsogi_va always use hardware encoder to encode frames. However the source bitstream can be fed by
+      ffsogi always use hardware encoder to encode frames. However the source bitstream can be fed by
       software(cpu) decode or hardware decode. If the hardware support the codec of input file, it is best
       to use hardware decode for efficiency. Otherwise use software decode for compatibility but slow performance.
 

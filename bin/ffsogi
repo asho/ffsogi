@@ -34,7 +34,7 @@ function help {
 	echo "--ab [value]: audio bitrate. default 64."
 	echo "--vb|-b [value]: video bitrate"
 	echo "--audio-loud: make audio volume louder in file."
-	echo "--16: transcode video to 16:9 aspect."
+	echo "--16: transcode video to 16:9 ratio."
 	echo "--sub: [subtitle filename]. Embedded subtitle into video."
 	echo "--preset [medium|slow|slower]: set encoder preset mode. default is medium."
 	echo "--ffmpeg_opt [options]: specify ffmpeg options."

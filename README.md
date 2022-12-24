@@ -36,7 +36,7 @@ usage:
 
 --audio-loud: make audio volume louder in file.
 
---16: transcode video to 16:9 aspect.
+--16: transcode video to 16:9 ratio.
 
 --sub: [subtitle filename]. Embedded subtitle into video.
 

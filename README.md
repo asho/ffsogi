@@ -118,3 +118,10 @@ ffsogi_va -i "input.mkv" -o output.mkv -c 24 --acopy (For AMD/Intel)
 
 ffsogi_nv -i "input.mkv" -o output.mkv -c 24 --acopy (For Nvidia)
 
+## Transcode 1080 video to hevc 8bit and using HW decode/encode. (best performance)
+ffsogi_va -i "input.mkv" -o output.mp4 -c 24 --hw
+
+**_NOTE:_** use vainfo to checkout supported codecs.
+
+ffsogi_nv -i "input.mkv" -o output.mp4 -c 24 --hw
+

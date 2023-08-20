@@ -7,17 +7,19 @@ INPUT=""
 OUTPUT=""
 AUDIO_BITRATE="64"
 VIDEO_BITRATE=""
-CRF="26"
+CRF=""
 AUDIO_LOUD=""
 SCALE=""
 ACOPY=""
 CODEC=
 OPT=
-HWOPT="-vaapi_device /dev/dri/renderD128"
+HWDEV="/dev/dri/renderD128"
+HWOPT="-vaapi_device ${HWDEV}"
 HWDEC=
 EIGHT_BIT=""
 DEINTERLACE=
 FORMAT="h265"
+HDR2SDR=""
 
 
 function help()
@@ -25,6 +27,7 @@ function help()
 	echo "$0 [options]:"
 	echo "-c [val]: CRF value. CRF encoding mode (default)."
 	echo "-b|--vb [bitrate]: Video bitrate value. VBR encoding mode. conflict with CRF."
+	echo "-d [render path]: vaapi render device path. useful with multiple gpus."
 	echo "-i [file]: input file to encode."
 	echo "-o [file]: output file."
 	echo "-s [width]: width to scale down. special value 7 for 720p, 4 for 480p."
@@ -40,11 +43,12 @@ function help()
 	echo "      to use hardware decode for efficiency. Otherwise use software decode for compatibility but slow performance."
 	echo "--audio-loud: To amplify audio volume. Conflict with --acopy."
 	echo "--de: deinterlace mode. Not useful now."
+	echo "--hdr2sdr: convert HDR(bt2020) to SDR(bt709)."
 	echo "--ffopt [options]: Append ffmpeg options that ffsogi not support."
 }
 
 
-options=$(getopt -o c:b:i:o:s:8f: --long vb:,ab:,hw,audio-loud,de,ffopt:,acopy -- "$@")
+options=$(getopt -o c:b:d:i:o:s:8f: --long vb:,ab:,hw,audio-loud,de,ffopt:,acopy,hdr2sdr -- "$@")
 eval set -- "$options" 
 while true; do 
 	case "$1" in 
@@ -56,6 +60,11 @@ while true; do
 			shift;
 			VIDEO_BITRATE=$1
 			CRF=""
+			;;
+		-d)
+			shift;
+			HWDEV=$1
+			HWOPT="-vaapi_device ${HWDEV}"
 			;;
 		-i)
 			shift;
@@ -82,13 +91,15 @@ while true; do
 			;;
 		--hw)
 			HWDEC=1
-			HWOPT="-hwaccel vaapi -hwaccel_output_format vaapi -hwaccel_device /dev/dri/renderD128"
 			;;
 		--audio-loud)
 			AUDIO_LOUD=1
 			;;
 		--de)
 			DEINTERLACE=1
+			;;
+		--hdr2sdr)
+			HDR2SDR=1
 			;;
 		--ffopt)
 			shift;
@@ -117,21 +128,31 @@ echo "output file: $OUTPUT"
 if [ "${FORMAT}" == "h264" ] || [ "${FORMAT}" = "avc" ]; then
 	OVC="-c:v h264_vaapi -coder:v cabac -refs 4"
 	if [ -z $VIDEO_BITRATE ]; then
-		OVC="$OVC -qp ${CRF}"
+		if [ -z ${CRF} ]; then
+			CRF=23
+		fi
+		OVC="$OVC -qp ${CRF} -rc_mode 4 -global_quality:v ${CRF}"
 	else
 		OVC="$OVC -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k"
 	fi
 elif [ "${FORMAT}" == "h265" ] || [ "${FORMAT}" == "hevc" ]; then
 	OVC="-c:v hevc_vaapi"
 	if [ -z $VIDEO_BITRATE ]; then
-		OVC="$OVC -qp ${CRF}"
+		if [ -z ${CRF} ]; then
+			CRF=28
+		fi
+		OVC="$OVC -qp ${CRF} -rc_mode 1 -global_quality:v ${CRF}"
 	else
-		OVC="$OVC -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k"
+		OVC="$OVC -b:v ${VIDEO_BITRATE}k -maxrate $((${VIDEO_BITRATE}*2))k -bufsize $((${VIDEO_BITRATE}*2))k"
+		#OVC="$OVC -b:v ${VIDEO_BITRATE}k"
 	fi
 elif [ "${FORMAT}" == "av1" ]; then
 	OVC="-c:v av1_vaapi"
 	if [ -z $VIDEO_BITRATE ]; then
-		OVC="$OVC -qp ${CRF}"
+		if [ -z ${CRF} ]; then
+			CRF=30
+		fi
+		OVC="$OVC -rc_mode 1 -global_quality:v ${CRF}"
 	else
 		OVC="$OVC -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k"
 	fi
@@ -141,7 +162,8 @@ else
 fi
 
 VF=""
-if [ ${HWDEC} = "1" ]; then
+if [ ${HWDEC} ]; then
+	HWOPT="-hwaccel vaapi -hwaccel_output_format vaapi -hwaccel_device ${HWDEV}"
 	if [ ${EIGHT_BIT} = "1" ]; then
 		VF="scale_vaapi=format=nv12"
 	fi
@@ -149,6 +171,14 @@ else
 	VF="format=nv12,hwupload"
 fi
 
+if [ ${HDR2SDR} ]; then
+	if [ ${VF} ]; then
+		VF="${VF},tonemap_vaapi=format=nv12:primaries=bt709:t=bt709"
+	else
+		VF="tonemap_vaapi=format=nv12:primaries=bt709:t=bt709"
+	fi
+
+fi
 
 if [ $SCALE ]; then
 	if [ $SCALE == "7" ]; then
@@ -180,7 +210,8 @@ fi
 if [ $ACOPY ]; then
 	OAC="-c:a copy"
 else
-	OAC="-c:a libfdk_aac -b:a ${AUDIO_BITRATE}k -ac 2"
+	#OAC="-c:a libfdk_aac -b:a ${AUDIO_BITRATE}k -ac 2"
+	OAC="-c:a libopus -b:a ${AUDIO_BITRATE}k"
 
 	if [ $AUDIO_LOUD ]; then
 		AF="-af 'volume=3'"

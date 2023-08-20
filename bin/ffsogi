@@ -166,7 +166,7 @@ else
 	if [ "$FORMAT" == "h264" ] || [ "${FORMAT}" == "avc" ]; then
 		if [ -z $VIDEO_BITRATE ]; then
 			if [ -z "$CRF" ]; then
-				CRF=24
+				CRF=23
 			fi
 
 			if [ ${THREADS} ]; then
@@ -180,7 +180,7 @@ else
 	elif [ "$FORMAT" == "h265" ] || [ "${FORMAT}" == "hevc" ]; then
 		if [ -z $VIDEO_BITRATE ]; then
 			if [ -z "$CRF" ]; then
-				CRF=26
+				CRF=28
 			fi
 
 			if [ ${THREADS} == "1" ]; then
@@ -207,14 +207,30 @@ else
 		else
 			OVC="-c:v libsvtav1 -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k -strict experimental ${THREADS} -preset 8"
 		fi
+	elif [ "$FORMAT" == "vp9" ]; then
+		if [ -z $VIDEO_BITRATE ]; then
+			if [ -z "$CRF" ]; then
+				CRF=30
+			fi
+
+			if [ -z ${THREADS} ]; then
+				THREADS="-threads `nproc`"
+			fi
+
+			OVC="-c:v libvpx-vp9 -crf ${CRF} -b:v 0 ${THREADS}"
+		else
+			OVC="-c:v libvpx-vp9 -b:v ${VIDEO_BITRATE}k -maxrate ${VIDEO_BITRATE}k -bufsize ${VIDEO_BITRATE}k -strict experimental ${THREADS} -preset 8"
+		fi
 	fi
+
 fi
 
 
 if [ $ACOPY ]; then
 	OAC="-c:a copy"
 else
-	OAC="-c:a aac -b:a ${AUDIO_BITRATE}k -ac 2 -ar 44100"
+	#OAC="-c:a libfdk_aac -b:a ${AUDIO_BITRATE}k"
+	OAC="-c:a libopus -b:a ${AUDIO_BITRATE}k"
 
 	if [ $AUDIO_LOUD ]; then
 		VF="$VF -af 'volume=3'"
